@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AtCoder Rated / Unrated ルーレット</title>
+<style>
+  :root { --bg:#0f1117; --panel:#181c25; --text:#f2f4f8; --muted:#aab2c0; --accent:#65d6ff; --line:#303746; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(circle at 50% 0%,#20283a 0,#0f1117 55%);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+  main{max-width:1050px;margin:0 auto;padding:28px 18px 48px}
+  h1{margin:0 0 8px;font-size:clamp(24px,4vw,38px)}
+  .sub{color:var(--muted);margin-bottom:22px}
+  .grid{display:grid;grid-template-columns:1fr 1.2fr;gap:18px}
+  .panel{background:rgba(24,28,37,.94);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 15px 50px #0004}
+  label{display:block;font-weight:700;margin:12px 0 7px}
+  input,textarea,button{font:inherit}
+  input,textarea{width:100%;background:#0e1219;color:var(--text);border:1px solid #394253;border-radius:10px;padding:10px}
+  textarea{min-height:230px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+  .hint{font-size:13px;color:var(--muted);line-height:1.5}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  button{border:0;border-radius:12px;padding:11px 17px;font-weight:800;cursor:pointer;background:#2a3342;color:white}
+  button.primary{background:var(--accent);color:#071018}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:13px}
+  .stat{background:#10141c;border:1px solid var(--line);border-radius:12px;padding:10px}
+  .stat b{display:block;font-size:20px;margin-top:3px}
+  .wheel-wrap{display:grid;place-items:center;padding:5px 0 12px}
+  canvas{width:min(100%,560px);height:auto;aspect-ratio:1;border-radius:50%;filter:drop-shadow(0 18px 28px #0008)}
+  .pointer{font-size:34px;text-align:center;height:32px;position:relative;z-index:2;color:#fff}
+  .result{text-align:center;font-size:clamp(28px,6vw,52px);font-weight:900;min-height:65px;margin-top:6px}
+  .prob{text-align:center;color:var(--muted);font-size:15px}
+  .bar{height:18px;background:#0e1219;border-radius:999px;overflow:hidden;display:flex;margin:12px 0}
+  .bar .rated{background:#55d6ff}.bar .unrated{background:#ff9b70}
+  .legend{display:flex;justify-content:center;gap:18px;font-size:13px;color:var(--muted)}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
+  .note{margin-top:16px;padding:12px;border-radius:12px;background:#111722;color:var(--muted);font-size:13px;line-height:1.55}
+  @media(max-width:800px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr 1fr}}
+</style>
+</head>
+<body>
+<main>
+  <h1>AtCoder Rated / Unrated ルーレット</h1>
+  <div class="sub">現在Rateと過去のPerformanceから「今回の実力を出せそうか」を簡易推定して、確率を変えるルーレット。</div>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>データ入力</h2>
+      <label for="username">AtCoderユーザー名</label>
+      <div class="row">
+        <input id="username" type="text" placeholder="例: tourist" style="flex:1;min-width:180px">
+        <button id="import">AtCoderから取得</button>
+      </div>
+      
+      <div id="status" class="hint" style="margin-top:8px">
+      ユーザー名を入力すると、現在Rateと直近のPerformanceを自動取得します。<br>
+      ※連続して取得せず、1秒以上間隔を空けてください。
+      </div>
+
+      <label for="rate">現在のRate</label>
+      <input id="rate" type="number" min="0" max="5000" step="1" placeholder="自動取得または手入力">
+
+      <label for="perf">過去のPerformance</label>
+      <textarea id="perf" placeholder="例:
+900
+760
+1100
+820
+680
+980"></textarea>
+      <div class="hint">
+        自動取得した場合は、マイナス補正を適用したPerformanceを古い順（新しいものが下）に入れます。
+      </div>
+
+      <div class="row" style="margin-top:14px">
+        <button id="calc">確率を計算</button>
+        <button id="clear">クリア</button>
+      </div>
+
+      <div class="stats">
+        <div class="stat">現在Rate<b id="sRate">—</b></div>
+        <div class="stat">平均Perf<b id="sAvg">—</b></div>
+        <div class="stat">直近傾向<b id="sTrend">—</b></div>
+      </div>
+
+      <div class="note">
+        判定は公式のRate計算式を再現するものではなく、ルーレット用の簡易モデルです。
+        「RateよりPerformanceが高い」「直近のPerformanceが上向き」ならRated側、
+        逆ならUnrated側へ重みを寄せます。
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="pointer">▼</div>
+      <div class="wheel-wrap"><canvas id="wheel" width="700" height="700"></canvas></div>
+      <div class="result" id="result">—</div>
+      <div class="prob" id="prob">データを入力して「確率を計算」</div>
+      <div class="bar"><div class="rated" id="ratedBar"></div><div class="unrated" id="unratedBar"></div></div>
+      <div class="legend">
+        <span><i class="dot" style="background:#55d6ff"></i>Rated</span>
+        <span><i class="dot" style="background:#ff9b70"></i>Unrated</span>
+      </div>
+      <div class="row" style="justify-content:center;margin-top:18px">
+        <button class="primary" id="spin" disabled>ルーレットを回す</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+const canvas=document.getElementById("wheel"),ctx=canvas.getContext("2d");
+const resultEl=document.getElementById("result"),probEl=document.getElementById("prob");
+const ratedBar=document.getElementById("ratedBar"),unratedBar=document.getElementById("unratedBar");
+const spinBtn=document.getElementById("spin");
+let ratedP=.5, rotation=0, spinning=false;
+const API_COOLDOWN_MS = 1200;
+let lastImportTime = 0;
+
+function parsePerf(){
+  return document.getElementById("perf").value
+    .split(/[,\s]+/).map(Number).filter(Number.isFinite).filter(x=>x>=0);
+}
+
+function model(){
+  const rate=Number(document.getElementById("rate").value);
+  const p=parsePerf();
+  if(!Number.isFinite(rate) || p.length===0) return null;
+
+  // Performanceは「上が古い・下が新しい」順。
+  // 新しいPerformanceほど強く見る指数重み。
+  let wsum=0, psum=0;
+  p.forEach((x,i)=>{
+    const w=Math.pow(.78,p.length-1-i);
+    wsum+=w;
+    psum+=x*w;
+  });
+  const weighted=psum/wsum;
+  const avg=p.reduce((a,b)=>a+b,0)/p.length;
+
+  // Rateとの差。差が大きいほどRatedを選びやすくする。
+  // ロジスティックで極端な確率になりすぎないようにする。
+  const gap=weighted-rate;
+  let score=gap/220;
+
+  // 直近3件と、それ以前の平均の差から短期トレンドを加味。
+  // 新しいPerformanceは下側に入る。
+  let trend=0;
+  if(p.length>=4){
+    const recent=p.slice(-3);
+    const old=p.slice(0,-3);
+    trend=recent.reduce((a,b)=>a+b,0)/recent.length-old.reduce((a,b)=>a+b,0)/old.length;
+    score += trend/500;
+  }
+
+  ratedP=0.5+0.38*(2/(1+Math.exp(-score))-1);
+  ratedP=Math.max(.12,Math.min(.88,ratedP));
+  return {rate,p,weighted,avg,gap,trend};
+}
+
+function drawWheel(rot=rotation){
+  const N=120, cx=350, cy=350, r=315;
+  ctx.clearRect(0,0,700,700);
+  for(let i=0;i<N;i++){
+    const a0=rot+i*2*Math.PI/N, a1=rot+(i+1)*2*Math.PI/N;
+    const mid=(a0+a1)/2;
+    const rated=Math.cos(mid-rot)>=0 ? true : false; // only decorative; probabilities below handled by sector sizes
+    ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,a0,a1);ctx.closePath();
+    ctx.fillStyle=rated?"#55d6ff":"#ff9b70";ctx.fill();
+  }
+  // overlay sectors whose sizes reflect actual probabilities
+  ctx.save();
+  ctx.translate(cx,cy);ctx.rotate(rot);
+  ctx.beginPath();ctx.moveTo(0,0);ctx.arc(0,0,r,0,2*Math.PI*ratedP);ctx.closePath();
+  ctx.fillStyle="#55d6ff";ctx.fill();
+  ctx.beginPath();ctx.moveTo(0,0);ctx.arc(0,0,r,2*Math.PI*ratedP,2*Math.PI);ctx.closePath();
+  ctx.fillStyle="#ff9b70";ctx.fill();
+  ctx.restore();
+
+  ctx.beginPath();ctx.arc(cx,cy,62,0,2*Math.PI);ctx.fillStyle="#121722";ctx.fill();
+  ctx.lineWidth=5;ctx.strokeStyle="#fff";ctx.stroke();
+  ctx.fillStyle="#fff";ctx.font="800 25px system-ui";ctx.textAlign="center";ctx.textBaseline="middle";
+  ctx.fillText("SPIN",cx,cy);
+}
+
+function update(){
+  const d=model();
+  if(!d){
+    spinBtn.disabled=true;
+    probEl.textContent="現在RateとPerformanceを入力してください";
+    ratedBar.style.width="50%";unratedBar.style.width="50%";
+    drawWheel();return;
+  }
+  spinBtn.disabled=false;
+  document.getElementById("sRate").textContent=Math.round(d.rate);
+  document.getElementById("sAvg").textContent=Math.round(d.avg);
+  document.getElementById("sTrend").textContent=d.p.length>=4 ? (d.trend>=0?"+":"")+Math.round(d.trend) : "データ不足";
+  const rp=Math.round(ratedP*100),up=100-rp;
+  probEl.textContent=`Rated ${rp}% / Unrated ${up}%　（簡易推定）`;
+  ratedBar.style.width=rp+"%";unratedBar.style.width=up+"%";
+  drawWheel();
+}
+
+function spin(){
+  if(spinning) return;
+  spinning=true;spinBtn.disabled=true;resultEl.textContent="…";
+  const targetRated=Math.random()<ratedP;
+  // Pointer is at the top. Choose a final angle that lands in the selected sector.
+  // The Rated sector occupies [0, 2π*ratedP] in wheel-local coordinates.
+  const safe=0.04;
+  const local=targetRated
+    ? (safe+Math.random()*(2*Math.PI*ratedP-2*safe))
+    : (2*Math.PI*ratedP+safe+Math.random()*(2*Math.PI*(1-ratedP)-2*safe));
+  const target=(-Math.PI/2)-local;
+  const turns=6+Math.floor(Math.random()*3);
+  const start=rotation, end=target+turns*2*Math.PI;
+  const duration=3600, t0=performance.now();
+  function frame(now){
+    const t=Math.min(1,(now-t0)/duration);
+    const eased=1-Math.pow(1-t,4);
+    rotation=start+(end-start)*eased;
+    drawWheel(rotation);
+    if(t<1) requestAnimationFrame(frame);
+    else{
+      rotation=end%(2*Math.PI);
+      drawWheel(rotation);
+      resultEl.textContent=targetRated?"RATED":"UNRATED";
+      resultEl.style.color=targetRated?"#55d6ff":"#ff9b70";
+      spinning=false;spinBtn.disabled=false;
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+document.getElementById("calc").onclick=update;
+document.getElementById("spin").onclick=spin;
+
+document.getElementById("import").onclick=async()=>{
+  const username=document.getElementById("username").value.trim();
+  const status=document.getElementById("status");
+  const btn=document.getElementById("import");
+
+  if(!username){
+    status.textContent="ユーザー名を入力してください。";
+    return;
+  }
+  const now=Date.now();
+
+  if(now-lastImportTime < API_COOLDOWN_MS){
+    const remain=((API_COOLDOWN_MS-(now-lastImportTime))/1000).toFixed(1);
+    status.textContent=`連続取得防止のため、あと${remain}秒待ってください。`;
+    return;
+  }
+
+  lastImportTime=now;
+
+  status.textContent="AtCoder Problems経由で取得中…";
+  btn.disabled=true;
+  try{
+    // AtCoder Problemsが実際に利用している公開プロキシ。
+    // 同プロジェクトのAPIClientでもこのURLからユーザーRating履歴を取得している。
+    const url="https://kenkoooo.com/atcoder/proxy/users/"
+      +encodeURIComponent(username)+"/history/json";
+
+    const res=await fetch(url,{cache:"no-store"});
+    if(!res.ok) throw new Error("HTTP "+res.status);
+
+    const data=await res.json();
+    if(!Array.isArray(data) || data.length===0)
+      throw new Error("ユーザーが見つからないか、Rating履歴がありません");
+
+    // AtCoderの履歴JSONは IsRated / Performance / NewRating / EndTime を使用。
+    const rated=data.filter(x => {
+      if(!x || x.IsRated !== true) return false;
+
+      const perf=Number(x.Performance);
+      const newRating=Number(x.NewRating);
+
+      // AtCoder Rating Estimatorと同じく、APIのPerformanceには
+      // マイナス補正前の値が入るため、ここで補正して入力する。
+      // 400未満では 400 / exp((400 - perf) / 400)、
+      // 400以上ではそのまま。
+      return Number.isFinite(perf) &&
+             Number.isFinite(newRating);
+    });
+
+    if(rated.length===0)
+      throw new Error("Rated contestの履歴が見つかりません");
+
+    // APIの順番に依存せず、時刻で「古い -> 新しい」に並べる。
+    // 入力欄では新しいPerformanceを下に入れる。
+    rated.sort((a,b)=>{
+      const ta=Date.parse(a.EndTime ?? "");
+      const tb=Date.parse(b.EndTime ?? "");
+      return ta-tb;
+    });
+
+    const latest=rated[rated.length-1];
+    const currentRate=Number(latest.NewRating);
+
+    if(!Number.isFinite(currentRate))
+      throw new Error("現在Rateを取得できませんでした");
+
+    document.getElementById("rate").value=Math.round(currentRate);
+    document.getElementById("perf").value=rated
+      .slice(-30)
+      .map(x=>{
+        const perf=Number(x.Performance);
+        const corrected=perf < 400
+          ? 400/Math.exp((400-perf)/400)
+          : perf;
+        return Math.floor(corrected);
+      })
+      .join("\n");
+
+    status.textContent=
+      `取得完了：${username} / Rate ${Math.round(currentRate)} / `
+      +`直近${Math.min(30,rated.length)}件のRated Performanceを読み込みました。`;
+
+    update();
+  }catch(e){
+    status.textContent=
+      "取得できませんでした。ユーザー名を確認するか、しばらく待って再試行してください。";
+    console.error(e);
+  }finally{
+    btn.disabled=false;
+  }
+};
+document.getElementById("clear").onclick=()=>{
+  document.getElementById("rate").value="";
+  document.getElementById("perf").value="";
+  resultEl.textContent="—";resultEl.style.color="";
+  ratedP=.5;update();
+};
+document.getElementById("rate").oninput=update;
+document.getElementById("perf").oninput=update;
+drawWheel();
+</script>
+</body>
+</html>
